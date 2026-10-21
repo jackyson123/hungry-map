@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#ff6b35" />
+  <meta name="description" content="附近有咩食 · Hungry Map — 搵附近食咩" />
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='80' font-size='80'%3E🍜%3C/text%3E%3C/svg%3E" />
+  <title>附近有咩食 · Hungry Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+  <style>
+    :root {
+      --primary: #ff6b35; --bg: #f8f5f2; --card: #fff; --text: #1a1a1a;
+      --muted: #6b7280; --border: #e5e7eb; --success: #10b981; --fav: #ef4444;
+      --shadow: 0 4px 20px rgba(0,0,0,.08); --radius: 16px;
+      --header: linear-gradient(135deg,#ff6b35,#ff8c42);
+      --chip: #fff; --input: #fff; --popup: #fff;
+    }
+    [data-theme="dark"] {
+      --bg: #121212; --card: #1e1e1e; --text: #f3f4f6; --muted: #9ca3af;
+      --border: #333; --shadow: 0 4px 20px rgba(0,0,0,.4);
+      --header: linear-gradient(135deg,#c2410c,#ea580c);
+      --chip: #2a2a2a; --input: #2a2a2a; --popup: #1e1e1e;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang TC", "Microsoft JhengHei", sans-serif;
+      background: var(--bg); color: var(--text); height: 100dvh; overflow: hidden;
+      display: flex; flex-direction: column; transition: background .25s, color .25s;
+    }
+    header {
+      background: var(--header); color: #fff; padding: 10px 12px;
+      display: flex; align-items: center; justify-content: space-between; gap: 6px;
+      box-shadow: 0 2px 12px rgba(255,107,53,.3); z-index: 1000; flex-shrink: 0;
+    }
+    .logo { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+    .logo span { font-size: 1.25rem; }
+    .header-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+    .btn {
+      border: none; border-radius: 999px; padding: 6px 10px; font-size: .78rem; font-weight: 600;
+      cursor: pointer; display: inline-flex; align-items: center; gap: 3px; white-space: nowrap;
+      transition: transform .15s;
+    }
+    .btn:active { transform: scale(.96); }
+    .btn-white { background: rgba(255,255,255,.95); color: var(--primary); }
+    .btn-ghost { background: rgba(255,255,255,.2); color: #fff; border: 1px solid rgba(255,255,255,.4); }
+    .btn-lucky { background: #fbbf24; color: #78350f; }
+    main { flex: 1; display: flex; position: relative; overflow: hidden; }
+    #map { flex: 1; height: 100%; z-index: 1; }
+    .panel {
+      position: absolute; top: 0; right: 0; width: min(400px, 100%); height: 100%;
+      background: var(--card); box-shadow: -4px 0 24px rgba(0,0,0,.1); z-index: 500;
+      display: flex; flex-direction: column; transition: transform .3s, background .25s;
+    }
+    .panel.collapsed { transform: translateX(100%); }
+    .panel-header {
+      padding: 10px 12px; border-bottom: 1px solid var(--border);
+      display: flex; flex-direction: column; gap: 7px; flex-shrink: 0;
+    }
+    .search-row { display: flex; gap: 6px; align-items: center; }
+    .search-input {
+      flex: 1; border: 1.5px solid var(--border); border-radius: 12px; padding: 8px 11px;
+      font-size: .88rem; outline: none; background: var(--input); color: var(--text);
+    }
+    .search-input:focus { border-color: var(--primary); }
+    .btn-clear {
+      background: var(--chip); border: 1.5px solid var(--border); color: var(--muted);
+      border-radius: 10px; padding: 7px 9px; font-size: .72rem; font-weight: 600; cursor: pointer;
+    }
+    .filters, .extra-filters {
+      display: flex; gap: 5px; overflow-x: auto; scrollbar-width: none;
+    }
+    .filters::-webkit-scrollbar, .extra-filters::-webkit-scrollbar { display: none; }
+    .chip {
+      flex-shrink: 0; border: 1.5px solid var(--border); background: var(--chip);
+      border-radius: 999px; padding: 4px 10px; font-size: .75rem; font-weight: 500;
+      cursor: pointer; color: var(--muted); transition: all .15s;
+    }
+    .chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .chip.toggle-on { background: var(--success); border-color: var(--success); color: #fff; }
+    .sort-row {
+      display: flex; align-items: center; gap: 6px; font-size: .78rem; color: var(--muted); flex-wrap: wrap;
+    }
+    .sort-row select, .sort-row input[type="number"] {
+      border: 1.5px solid var(--border); border-radius: 8px; padding: 4px 7px;
+      font-size: .78rem; background: var(--input); color: var(--text); outline: none;
+    }
+    .sort-row input[type="number"] { width: 64px; }
+    .list-count { font-size: .78rem; color: var(--muted); }
+    .list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 7px; }
+    .section-label { font-size: .72rem; font-weight: 600; color: var(--muted); padding: 3px 2px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 11px; cursor: pointer; display: flex; gap: 9px; position: relative;
+      transition: box-shadow .2s, transform .15s, border-color .15s;
+    }
+    .card:hover, .card.active { box-shadow: var(--shadow); border-color: var(--primary); }
+    .card:active { transform: scale(.98); }
+    .card.fav-card { border-color: #fecaca; background: #fff7f7; }
+    [data-theme="dark"] .card.fav-card { background: #2a1515; border-color: #7f1d1d; }
+    .card-emoji {
+      font-size: 1.7rem; width: 42px; height: 42px; display: flex; align-items: center;
+      justify-content: center; background: #fff5f0; border-radius: 12px; flex-shrink: 0;
+    }
+    [data-theme="dark"] .card-emoji { background: #3a2a20; }
+    .card-body { flex: 1; min-width: 0; }
+    .card-title {
+      font-weight: 700; font-size: .92rem; margin-bottom: 2px; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; padding-right: 26px;
+    }
+    .card-meta {
+      font-size: .75rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 3px;
+    }
+    .rating { color: #f59e0b; font-weight: 600; }
+    .distance { color: var(--primary); font-weight: 600; }
+    .walk { color: #059669; font-weight: 500; }
+    .tags { display: flex; gap: 3px; flex-wrap: wrap; }
+    .tag { font-size: .66rem; background: #f3f4f6; color: #4b5563; padding: 2px 6px; border-radius: 6px; }
+    [data-theme="dark"] .tag { background: #333; color: #ccc; }
+    .note-tag { background: #fef3c7; color: #92400e; }
+    [data-theme="dark"] .note-tag { background: #422006; color: #fcd34d; }
+    .fav-btn {
+      position: absolute; top: 8px; right: 8px; background: none; border: none;
+      font-size: 1.15rem; cursor: pointer; opacity: .7; transition: transform .2s, opacity .15s;
+    }
+    .fav-btn:hover { opacity: 1; transform: scale(1.2); }
+    .fav-btn.is-fav { opacity: 1; animation: heartPop .35s ease; }
+    @keyframes heartPop { 0% { transform: scale(1); } 50% { transform: scale(1.35); } 100% { transform: scale(1); } }
+    .empty { text-align: center; padding: 36px 16px; color: var(--muted); }
+    .empty-icon { font-size: 2.5rem; margin-bottom: 8px; }
+    .toggle-panel {
+      position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 600;
+      background: var(--card); border: none; border-radius: 999px; padding: 11px 18px;
+      font-weight: 700; font-size: .92rem; box-shadow: 0 4px 20px rgba(0,0,0,.15);
+      cursor: pointer; display: none; color: var(--text);
+    }
+    .status {
+      position: absolute; top: 10px; left: 10px; z-index: 400; background: var(--card); color: var(--text);
+      border-radius: 12px; padding: 7px 12px; font-size: .82rem; box-shadow: var(--shadow);
+      display: flex; align-items: center; gap: 7px; max-width: calc(100% - 90px);
+    }
+    .status.hidden { display: none; }
+    .spinner {
+      width: 15px; height: 15px; border: 2px solid var(--border); border-top-color: var(--primary);
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .map-controls {
+      position: absolute; top: 10px; right: 10px; z-index: 400;
+      display: flex; flex-direction: column; gap: 5px;
+    }
+    .map-ctrl-btn {
+      background: var(--card); color: var(--text); border: 1px solid var(--border);
+      border-radius: 10px; padding: 7px 10px; font-size: .75rem; font-weight: 600;
+      cursor: pointer; box-shadow: var(--shadow); white-space: nowrap;
+    }
+    .map-ctrl-btn.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 2000;
+      display: flex; align-items: center; justify-content: center; padding: 16px;
+      opacity: 0; visibility: hidden; transition: opacity .25s, visibility .25s;
+    }
+    .modal-overlay.show { opacity: 1; visibility: visible; }
+    .modal {
+      background: var(--card); color: var(--text); border-radius: 18px; padding: 20px;
+      max-width: 360px; width: 100%; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,.25);
+      transform: scale(.92); transition: transform .25s; max-height: 90vh; overflow-y: auto;
+    }
+    .modal-overlay.show .modal { transform: scale(1); }
+    .modal-emoji { font-size: 3rem; margin-bottom: 6px; }
+    .modal-title { font-size: 1.15rem; font-weight: 700; margin-bottom: 6px; }
+    .modal-meta { color: var(--muted); font-size: .88rem; margin-bottom: 14px; line-height: 1.5; }
+    .modal-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+    .modal-actions .btn { flex: 1; justify-content: center; padding: 11px; font-size: .88rem; min-width: 90px; }
+    .btn-primary { background: var(--primary); color: #fff; }
+    .btn-secondary { background: #f3f4f6; color: #1a1a1a; }
+    [data-theme="dark"] .btn-secondary { background: #333; color: #f3f4f6; }
+    .onboard { text-align: left; line-height: 1.55; font-size: .86rem; }
+    .onboard li { margin-bottom: 5px; }
+    .note-input {
+      width: 100%; border: 1.5px solid var(--border); border-radius: 10px; padding: 8px;
+      font-size: .85rem; background: var(--input); color: var(--text); margin: 8px 0; resize: vertical;
+    }
+    .leaflet-popup-content-wrapper {
+      border-radius: 14px !important; padding: 0 !important; overflow: hidden;
+      background: var(--popup) !important; color: var(--text) !important;
+    }
+    .leaflet-popup-content { margin: 0 !important; min-width: 230px; }
+    .leaflet-popup-tip { background: var(--popup) !important; }
+    .popup-card { padding: 12px; }
+    .popup-title { font-weight: 700; font-size: 1rem; margin-bottom: 3px; }
+    .popup-meta { font-size: .82rem; color: var(--muted); margin-bottom: 8px; line-height: 1.4; }
+    .popup-actions { display: flex; gap: 5px; flex-wrap: wrap; }
+    .popup-btn {
+      flex: 1; text-align: center; padding: 7px; border-radius: 9px; font-size: .74rem;
+      font-weight: 600; text-decoration: none; border: none; cursor: pointer; min-width: 58px;
+    }
+    .popup-btn.nav { background: #3b82f6; color: #fff; }
+    .popup-btn.fav { background: #fef2f2; color: var(--fav); }
+    .popup-btn.fav.is-fav { background: var(--fav); color: #fff; }
+    .popup-btn.share { background: #ecfdf5; color: #059669; }
+    .popup-btn.note { background: #fef3c7; color: #92400e; }
+    .custom-marker {
+      background: var(--primary); color: #fff; width: 34px; height: 34px;
+      border-radius: 50% 50% 50% 0; transform: rotate(-45deg);
+      display: flex; align-items: center; justify-content: center;
+      border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,.25); font-size: .95rem;
+    }
+    .custom-marker span { transform: rotate(45deg); }
+    .custom-marker.fav-marker { background: var(--fav); }
+    .user-marker {
+      background: #3b82f6; width: 16px; height: 16px; border-radius: 50%;
+      border: 3px solid #fff; box-shadow: 0 0 0 4px rgba(59,130,246,.3);
+    }
+    .skeleton {
+      background: linear-gradient(90deg, var(--border) 25%, var(--chip) 50%, var(--border) 75%);
+      background-size: 200% 100%; animation: shimmer 1.2s infinite; border-radius: 12px; height: 72px;
+    }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+    [data-theme="dark"] .marker-cluster-small,
+    [data-theme="dark"] .marker-cluster-medium,
+    [data-theme="dark"] .marker-cluster-large { background-color: rgba(255,107,53,.5) !important; }
+    [data-theme="dark"] .marker-cluster-small div,
+    [data-theme="dark"] .marker-cluster-medium div,
+    [data-theme="dark"] .marker-cluster-large div {
+      background-color: rgba(255,107,53,.85) !important; color: #fff !important;
+    }
+    @media (max-width: 720px) {
+      .panel {
+        width: 100%; height: 56%; top: auto; bottom: 0;
+        border-radius: 18px 18px 0 0; transform: translateY(0);
+      }
+      .panel.collapsed { transform: translateY(calc(100% - 54px)); }
+      .toggle-panel { display: flex; bottom: calc(56% + 10px); }
+      body:has(.panel.collapsed) .toggle-panel { bottom: 64px; }
+      .status { top: 6px; left: 6px; right: 6px; max-width: none; }
+      .map-controls { top: auto; bottom: calc(56% + 64px); right: 8px; }
+      body:has(.panel.collapsed) .map-controls { bottom: 74px; }
+      .header-actions .btn .hm { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="logo"><span>🍜</span><div id="appTitle">附近有咩食</div></div>
+    <div class="header-actions">
+      <button class="btn btn-lucky" id="btnLucky" title="R">🎲 <span class="hm" data-i18n="lucky">隨機</span></button>
+      <button class="btn btn-ghost" id="btnLang" title="Language">EN</button>
+      <button class="btn btn-ghost" id="btnTheme" title="D">🌙</button>
+      <button class="btn btn-ghost" id="btnLocate" title="L">📍 <span class="hm" data-i18n="locate">定位</span></button>
+      <button class="btn btn-white" id="btnTogglePanel">📋 <span class="hm" data-i18n="list">列表</span></button>
+      <button class="btn btn-ghost" id="btnMore" title="更多">⋯</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="map"></div>
+    <div class="status" id="status"><div class="spinner"></div><span data-i18n="locating">正在定位…</span></div>
+    <div class="map-controls">
+      <button class="map-ctrl-btn" id="btnCircle" data-i18n="range">範圍</button>
+      <button class="map-ctrl-btn" id="btnSat" data-i18n="satellite">衛星</button>
+    </div>
+
+    <aside class="panel" id="panel">
+      <div class="panel-header">
+        <div class="search-row">
+          <input type="search" class="search-input" id="searchInput" data-i18n-placeholder="searchPh" placeholder="搜尋餐廳、菜式…" />
+          <button class="btn-clear" id="btnClear" data-i18n="clear">清空</button>
+        </div>
+        <div class="filters" id="filters">
+          <button class="chip active" data-filter="all" data-i18n="all">全部</button>
+          <button class="chip" data-filter="fav">❤️ <span data-i18n="favs">收藏</span> <span id="favCount"></span></button>
+          <button class="chip" data-filter="restaurant">🍽️ 普通食肆</button>
+          <button class="chip" data-filter="cafe">☕ 小食食肆</button>
+        </div>
+        <div class="extra-filters">
+          <button class="chip" id="chipOpen">🟢 <span data-i18n="openNow">營業中</span></button>
+          <button class="chip" data-price="$">$</button>
+          <button class="chip" data-price="$$">$$</button>
+          <button class="chip" data-price="$$$">$$$</button>
+        </div>
+        <div class="sort-row">
+          <span data-i18n="sort">排序</span>：
+          <select id="sortSelect">
+            <option value="dist" data-i18n="sortDist">距離</option>
+            <option value="rating" data-i18n="sortRating">評分</option>
+            <option value="price" data-i18n="sortPrice">價錢</option>
+          </select>
+          <span data-i18n="radius">範圍</span>
+          <input type="number" id="radiusInput" min="200" max="5000" step="100" value="1200" title="米" />
+          <span class="list-count" id="listCount"></span>
+        </div>
+      </div>
+      <div class="list" id="list"></div>
+    </aside>
+    <button class="toggle-panel" id="btnMobileToggle"><span id="toggleText" data-i18n="showList">查看列表</span></button>
+  </main>
+
+  <!-- Lucky -->
+  <div class="modal-overlay" id="luckyModal">
+    <div class="modal">
+      <div class="modal-emoji" id="luckyEmoji">🎲</div>
+      <div class="modal-title" id="luckyName"></div>
+      <div class="modal-meta" id="luckyMeta"></div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="luckyAgain" data-i18n="again">再抽</button>
+        <button class="btn btn-primary" id="luckyGo" data-i18n="goDetail">詳情</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Note -->
+  <div class="modal-overlay" id="noteModal">
+    <div class="modal">
+      <div class="modal-title" data-i18n="myNote">我的備註</div>
+      <div class="modal-meta" id="notePlaceName"></div>
+      <textarea class="note-input" id="noteText" rows="3" data-i18n-placeholder="notePh" placeholder="例如：下次再嚟 / 一般 / 唔推…"></textarea>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" id="noteCancel" data-i18n="cancel">取消</button>
+        <button class="btn btn-primary" id="noteSave" data-i18n="save">儲存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- More / About -->
+  <div class="modal-overlay" id="moreModal">
+    <div class="modal" style="text-align:left">
+      <div class="modal-title" style="text-align:center" data-i18n="more">更多</div>
+      <div class="modal-meta" style="margin-top:12px">
+        <button class="btn btn-secondary" id="btnExport" style="width:100%;margin-bottom:8px" data-i18n="exportFav">📤 匯出收藏</button>
+        <button class="btn btn-secondary" id="btnInstall" style="width:100%;margin-bottom:8px;display:none" data-i18n="install">📲 加到主畫面</button>
+        <button class="btn btn-secondary" id="btnAbout" style="width:100%;margin-bottom:8px" data-i18n="about">ℹ️ 關於</button>
+        <div style="font-size:.8rem;color:var(--muted);margin-top:10px" data-i18n="shortcuts">
+          快捷鍵：R 隨機 · L 定位 · D 深色 · / 搜尋
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="moreClose" style="flex:1" data-i18n="close">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="aboutModal">
+    <div class="modal">
+      <div class="modal-emoji">🍜</div>
+      <div class="modal-title">Hungry Map</div>
+      <div class="modal-meta onboard">
+        <p data-i18n="aboutText">附近有咩食 — 用地圖搵附近食店。<br/>資料來源：食物環境衞生署持牌食肆（DATA.GOV.HK）。<br/>地圖：Esri · 完全唔使 API key。<br/>版本 2.0 · 本地儲存收藏與備註。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="aboutClose" style="flex:1" data-i18n="close">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-overlay" id="onboardModal">
+    <div class="modal">
+      <div class="modal-emoji">🍜</div>
+      <div class="modal-title" data-i18n="welcome">歡迎使用 Hungry Map</div>
+      <div class="modal-meta onboard">
+        <ul style="padding-left:18px;margin:0" data-i18n-html="welcomeList">
+          <li>📍 自動定位 + 真實 OSM 餐廳</li>
+          <li>❤️ 收藏 · 📝 備註 · 🎲 隨機</li>
+          <li>🧭 Google Maps 導航 · 📤 分享</li>
+          <li>🌙 深色 · 衛星圖 · 自訂範圍</li>
+          <li>📲 可加到主畫面（PWA）</li>
+        </ul>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" id="onboardClose" style="flex:1" data-i18n="start">開始使用</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+  <script>
+  // ===== i18n =====
+  const I18N = {
+    zh: {
+      lucky:'隨機', locate:'定位', list:'列表', locating:'正在定位…', range:'範圍', satellite:'衛星',
+      searchPh:'搜尋餐廳、菜式…', clear:'清空', all:'全部', favs:'收藏', restaurant:'餐廳',
+      cafe:'咖啡', fastfood:'快餐', bar:'酒吧', openNow:'營業中', sort:'排序', sortDist:'距離',
+      sortRating:'評分', sortPrice:'價錢', radius:'範圍', showList:'查看列表', hideList:'收起列表',
+      again:'再抽', goDetail:'詳情', myNote:'我的備註', notePh:'例如：下次再嚟 / 一般 / 唔推…',
+      cancel:'取消', save:'儲存', more:'更多', exportFav:'📤 匯出收藏', install:'📲 加到主畫面',
+      about:'ℹ️ 關於', close:'關閉', welcome:'歡迎使用 Hungry Map', start:'開始使用',
+      shortcuts:'快捷鍵：R 隨機 · L 定位 · D 深色 · / 搜尋',
+      aboutText:'附近有咩食 — 用地圖搵附近食店。<br/>資料來源：食物環境衞生署持牌食肆（DATA.GOV.HK）。<br/>地圖：Esri · 唔使 API key。<br/>版本 3.0 · 本地儲存收藏與備註。',
+      welcomeList:'<li>📍 自動定位 + 食環署持牌食肆</li><li>❤️ 收藏 · 📝 備註 · 🎲 隨機</li><li>🧭 Google Maps 導航 · 📤 分享</li><li>🌙 深色 · 衛星圖 · 自訂範圍</li><li>📲 可加到主畫面（PWA）</li>',
+      noResult:'😕 附近搵唔到持牌食肆<br/><small>試下加大範圍（米）或清空篩選</small>',
+      recent:'最近瀏覽', results:'全部結果', open:'營業中', closed:'休息中',
+      nav:'🧭 導航', fav:'🤍 收藏', faved:'❤️ 已收藏', share:'📤 分享', note:'📝 備註',
+      walk:'分鐘', exported:'已下載收藏清單', copied:'已複製',
+      dataReal:'食環署持牌食肆', dataMock:'示範資料（OSM 無結果或失敗）',
+      youAreHere:'你喺呢度 📍<br/><small>雙擊地圖可重新定位</small>'
+    },
+    en: {
+      lucky:'Lucky', locate:'Locate', list:'List', locating:'Locating…', range:'Range', satellite:'Satellite',
+      searchPh:'Search places…', clear:'Clear', all:'All', favs:'Saved', restaurant:'Restaurant',
+      cafe:'Cafe', fastfood:'Fast food', bar:'Bar', openNow:'Open', sort:'Sort', sortDist:'Distance',
+      sortRating:'Rating', sortPrice:'Price', radius:'Radius', showList:'Show list', hideList:'Hide list',
+      again:'Again', goDetail:'Details', myNote:'My note', notePh:'e.g. Come again / OK / Skip…',
+      cancel:'Cancel', save:'Save', more:'More', exportFav:'📤 Export saved', install:'📲 Install app',
+      about:'ℹ️ About', close:'Close', welcome:'Welcome to Hungry Map', start:'Get started',
+      shortcuts:'Shortcuts: R Lucky · L Locate · D Dark · / Search',
+      aboutText:'Hungry Map — find places to eat nearby.<br/>Data: FEHD licensed restaurants (DATA.GOV.HK).<br/>Map: Esri · No API key required.<br/>v3.0 · Favourites & notes stored locally.',
+      welcomeList:'<li>📍 Auto-locate + FEHD licensed restaurants</li><li>❤️ Save · 📝 Notes · 🎲 Lucky pick</li><li>🧭 Google Maps · 📤 Share</li><li>🌙 Dark mode · Satellite · Custom radius</li><li>📲 Install as PWA</li>',
+      noResult:'😕 No licensed restaurants nearby<br/><small>Try larger radius or clear filters</small>',
+      recent:'Recent', results:'All results', open:'Open', closed:'Closed',
+      nav:'🧭 Nav', fav:'🤍 Save', faved:'❤️ Saved', share:'📤 Share', note:'📝 Note',
+      walk:'min', exported:'Favourites downloaded', copied:'Copied',
+      dataReal:'FEHD licensed restaurants', dataMock:'',
+      youAreHere:'You are here 📍<br/><small>Double-click map to re-locate</small>'
+    }
+  };
+  let lang = localStorage.getItem('hm-lang') || 'zh';
+  function t(k) { return (I18N[lang] && I18N[lang][k]) || I18N.zh[k] || k; }
+  function applyI18n() {
+    document.querySelectorAll('[data-i18n]').forEach(el => { el.textContent = t(el.dataset.i18n); });
+    document.querySelectorAll('[data-i18n-placeholder]').forEach(el => { el.placeholder = t(el.dataset.i18nPlaceholder); });
+    document.querySelectorAll('[data-i18n-html]').forEach(el => { el.innerHTML = t(el.dataset.i18nHtml); });
+    document.getElementById('appTitle').textContent = lang === 'zh' ? '附近有咩食' : 'Hungry Map';
+    document.getElementById('btnLang').textContent = lang === 'zh' ? 'EN' : '中';
+    document.documentElement.lang = lang === 'zh' ? 'zh-Hant' : 'en';
+    const tt = document.getElementById('toggleText');
+    if (tt) tt.textContent = panelCollapsed ? t('showList') : t('hideList');
+  }
+
+  // ===== FEHD official licensed restaurants (local JSON) =====
+  const TYPE_MAP = { RL: 'restaurant', RR: 'cafe', MR: 'restaurant' };
+  const EMOJI_MAP = { RL: '🍽️', RR: '☕', MR: '🚢' };
+  const DIST_NAME = {
+    '11': '東區', '12': '灣仔', '15': '南區', '17': '離島', '18': '中西區', '31': '美食車',
+    '51': '觀塘', '52': '九龍城', '53': '黃大仙', '61': '油尖', '62': '旺角', '63': '深水埗',
+    '91': '葵青', '92': '荃灣', '93': '屯門', '94': '元朗', '95': '大埔', '96': '北區', '97': '沙田', '98': '西貢'
+  };
+  let fehdAll = null;
+  let fehdMeta = null;
+
+  function haversine(lat1, lng1, lat2, lng2) {
+    const R = 6371, dLat = (lat2 - lat1) * Math.PI / 180, dLng = (lng2 - lng1) * Math.PI / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  async function loadFehdDataset() {
+    if (fehdAll) return fehdAll;
+    const res = await fetch('./data/restaurants.min.json', { cache: 'force-cache' });
+    if (!res.ok) throw new Error('無法載入食環署資料');
+    const data = await res.json();
+    fehdMeta = data;
+    fehdAll = data.p || [];
+    return fehdAll;
+  }
+
+  async function fetchNearbyPlaces(lat, lng, radiusM) {
+    const all = await loadFehdDataset();
+    const rKm = radiusM / 1000;
+    const dLat = rKm / 111;
+    const dLng = rKm / (111 * Math.cos(lat * Math.PI / 180) || 1);
+    const results = [];
+    for (let i = 0; i < all.length; i++) {
+      const p = all[i];
+      if (p.a < lat - dLat || p.a > lat + dLat || p.o < lng - dLng || p.o > lng + dLng) continue;
+      const distKm = haversine(lat, lng, p.a, p.o);
+      if (distKm > rKm) continue;
+      const tcode = p.t || 'RL';
+      results.push({
+        id: p.i,
+        name: p.n,
+        type: TYPE_MAP[tcode] || 'restaurant',
+        typeCode: tcode,
+        emoji: EMOJI_MAP[tcode] || '🍽️',
+        lat: p.a,
+        lng: p.o,
+        address: p.ad || '',
+        district: DIST_NAME[p.d] || p.d || '',
+        tags: DIST_NAME[p.d] ? [DIST_NAME[p.d]] : [],
+        distKm: Math.round(distKm * 10) / 10,
+        walkMin: Math.max(1, Math.round(distKm * 12)),
+        rating: null,
+        price: null,
+        priceLevel: 0,
+        open: null,
+        openingHours: null,
+        source: 'fehd'
+      });
+    }
+    results.sort((a, b) => a.distKm - b.distKm);
+    return results;
+  }
+
+  // ===== State =====
+  let map, userMarker, markersCluster, rangeCircle, streetLayer, satLayer;
+  let places = [];
+  let activeFilter = 'all', searchQuery = '', onlyOpen = false;
+  let priceFilters = new Set(), sortBy = 'dist', radiusM = 1200;
+  let userLat = 22.3193, userLng = 114.1694, panelCollapsed = false;
+  let favorites = new Set(JSON.parse(localStorage.getItem('hm-favs') || '[]'));
+  let notes = JSON.parse(localStorage.getItem('hm-notes') || '{}');
+  let recentIds = JSON.parse(localStorage.getItem('hm-recent') || '[]');
+  let lastLuckyId = null, showRange = false, useSat = false, dataSource = 'none';
+  let noteTargetId = null, deferredPrompt = null;
+
+  function saveFavs() { localStorage.setItem('hm-favs', JSON.stringify([...favorites])); updateFavCount(); }
+  function saveNotes() { localStorage.setItem('hm-notes', JSON.stringify(notes)); }
+  function saveRecent() { localStorage.setItem('hm-recent', JSON.stringify(recentIds.slice(0, 8))); }
+  function addRecent(id) { recentIds = [id, ...recentIds.filter(x => x !== id)].slice(0, 8); saveRecent(); }
+  function updateFavCount() {
+    const el = document.getElementById('favCount');
+    if (el) el.textContent = favorites.size ? '(' + favorites.size + ')' : '';
+  }
+
+  function toggleFav(id) {
+    id = String(id);
+    if (favorites.has(id)) favorites.delete(id); else favorites.add(id);
+    saveFavs(); renderMarkers(); renderList();
+  }
+
+  // Theme
+  function initTheme() {
+    const saved = localStorage.getItem('hm-theme');
+    const dark = saved ? saved === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+    setTheme(dark ? 'dark' : 'light');
+  }
+  function setTheme(th) {
+    document.documentElement.setAttribute('data-theme', th === 'dark' ? 'dark' : 'light');
+    localStorage.setItem('hm-theme', th);
+    document.getElementById('btnTheme').textContent = th === 'dark' ? '☀️' : '🌙';
+  }
+  function toggleTheme() {
+    setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  }
+
+  // Map
+  function initMap() {
+    map = L.map('map', { zoomControl: false, attributionControl: true, doubleClickZoom: false }).setView([userLat, userLng], 15);
+    streetLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, attribution: 'Esri'
+    });
+    satLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      maxZoom: 19, attribution: 'Esri'
+    });
+    streetLayer.addTo(map);
+    L.control.zoom({ position: 'bottomleft' }).addTo(map);
+    markersCluster = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 48, spiderfyOnMaxZoom: true });
+    map.addLayer(markersCluster);
+    map.on('dblclick', locateUser);
+  }
+
+  function updateRangeCircle() {
+    if (rangeCircle) { map.removeLayer(rangeCircle); rangeCircle = null; }
+    if (showRange) {
+      rangeCircle = L.circle([userLat, userLng], {
+        radius: radiusM, color: '#ff6b35', fillColor: '#ff6b35', fillOpacity: 0.07, weight: 2
+      }).addTo(map);
+    }
+  }
+
+  function locateUser() {
+    const status = document.getElementById('status');
+    status.classList.remove('hidden');
+    status.innerHTML = '<div class="spinner"></div><span>' + t('locating') + '</span>';
+    if (!navigator.geolocation) {
+      finishLocate(userLat, userLng, true);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => { userLat = pos.coords.latitude; userLng = pos.coords.longitude; finishLocate(userLat, userLng, false); },
+      () => { userLat = 22.2819; userLng = 114.1589; finishLocate(userLat, userLng, true); },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  }
+
+  async function finishLocate(lat, lng, fallback) {
+    const status = document.getElementById('status');
+    map.setView([lat, lng], 15);
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([lat, lng], {
+      icon: L.divIcon({ className: '', html: '<div class="user-marker"></div>', iconSize: [16, 16], iconAnchor: [8, 8] }),
+      zIndexOffset: 1000
+    }).addTo(map).bindPopup(t('youAreHere'));
+
+    // skeleton
+    document.getElementById('list').innerHTML = '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
+
+    status.innerHTML = '<div class="spinner"></div><span>載入食環署持牌食肆…</span>';
+    status.classList.remove('hidden');
+    try {
+      places = await fetchNearbyPlaces(lat, lng, radiusM);
+      dataSource = 'fehd';
+      const total = fehdMeta ? fehdMeta.n : '';
+      status.innerHTML = '✅ 食環署 · 附近 ' + places.length + (lang === 'zh' ? ' 間' : '') + (total ? ' / 全港 ' + total : '');
+      setTimeout(() => status.classList.add('hidden'), 2500);
+    } catch (e) {
+      places = [];
+      dataSource = 'none';
+      status.innerHTML = '⚠️ 載入失敗 · <a href="#" id="retryOsm" style="color:var(--primary);font-weight:700">重試</a>';
+      console.warn('FEHD load error', e);
+      const retry = document.getElementById('retryOsm');
+      if (retry) retry.onclick = (ev) => { ev.preventDefault(); finishLocate(userLat, userLng, false); };
+    }
+    updateRangeCircle();
+    renderMarkers();
+    renderList();
+  }
+
+  function getFiltered() {
+    let list = places.filter(p => {
+      const matchType = activeFilter === 'all' || (activeFilter === 'fav' ? favorites.has(String(p.id)) : p.type === activeFilter);
+      const q = searchQuery.trim().toLowerCase();
+      const matchSearch = !q || p.name.toLowerCase().includes(q) || p.type.toLowerCase().includes(q) || (p.tags || []).some(x => x.toLowerCase().includes(q));
+      // 真實資料多數無 opening_hours / price，呢兩個篩選只喺有資料時生效
+      const matchOpen = !onlyOpen || p.open === true || p.open === null;
+      const matchPrice = priceFilters.size === 0 || !p.price || priceFilters.has(p.price);
+      return matchType && matchSearch && matchOpen && matchPrice;
+    });
+    if (sortBy === 'rating') list = list.slice().sort((a, b) => (b.rating || 0) - (a.rating || 0) || a.distKm - b.distKm);
+    else if (sortBy === 'price') list = list.slice().sort((a, b) => (a.priceLevel || 99) - (b.priceLevel || 99) || a.distKm - b.distKm);
+    else list = list.slice().sort((a, b) => a.distKm - b.distKm);
+    return list;
+  }
+
+  function renderMarkers() {
+    markersCluster.clearLayers();
+    getFiltered().forEach(p => {
+      const isFav = favorites.has(String(p.id));
+      const icon = L.divIcon({
+        className: '',
+        html: '<div class="custom-marker' + (isFav ? ' fav-marker' : '') + '"><span>' + p.emoji + '</span></div>',
+        iconSize: [34, 34], iconAnchor: [17, 34], popupAnchor: [0, -34]
+      });
+      const marker = L.marker([p.lat, p.lng], { icon });
+      marker.bindPopup(() => createPopup(p));
+      marker.on('click', () => { highlightCard(p.id); addRecent(String(p.id)); });
+      markersCluster.addLayer(marker);
+    });
+  }
+
+  function navUrl(p) {
+    return 'https://www.google.com/maps/dir/?api=1&destination=' + p.lat + ',' + p.lng + '&travelmode=walking';
+  }
+
+  function metaLine(p) {
+    const parts = ['📍 ' + p.distKm + ' km', '🚶 ' + p.walkMin + ' ' + t('walk')];
+    if (p.rating) parts.unshift('⭐ ' + p.rating);
+    if (p.price) parts.splice(1, 0, p.price);
+    return parts.join(' · ');
+  }
+
+  function createPopup(p) {
+    const isFav = favorites.has(String(p.id));
+    const note = notes[String(p.id)];
+    const oh = p.openingHours ? (' · ' + p.openingHours) : '';
+    return '<div class="popup-card"><div class="popup-title">' + p.emoji + ' ' + p.name + '</div>' +
+      '<div class="popup-meta">' + metaLine(p) + '<br/>' + p.type + oh +
+      (note ? '<br/>📝 ' + note : '') +
+      (p.address ? '<br/>' + p.address : '') +
+      '</div>' +
+      '<div class="popup-actions">' +
+      '<a class="popup-btn nav" href="' + navUrl(p) + '" target="_blank" rel="noopener">' + t('nav') + '</a>' +
+      '<button class="popup-btn fav' + (isFav ? ' is-fav' : '') + '" onclick="toggleFav(\'' + p.id + '\')">' + (isFav ? t('faved') : t('fav')) + '</button>' +
+      '<button class="popup-btn share" onclick="sharePlace(\'' + p.id + '\')">' + t('share') + '</button>' +
+      '<button class="popup-btn note" onclick="openNote(\'' + p.id + '\')">' + t('note') + '</button>' +
+      '</div></div>';
+  }
+
+  window.sharePlace = async function(id) {
+    const p = places.find(x => String(x.id) === String(id));
+    if (!p) return;
+    const text = p.emoji + ' ' + p.name + '\n' + metaLine(p) + '\n' + navUrl(p);
+    if (navigator.share) { try { await navigator.share({ title: p.name, text, url: navUrl(p) }); } catch (e) {} }
+    else { try { await navigator.clipboard.writeText(text); alert(t('copied')); } catch (e) { prompt('', text); } }
+  };
+
+  window.openNote = function(id) {
+    noteTargetId = String(id);
+    const p = places.find(x => String(x.id) === noteTargetId);
+    document.getElementById('notePlaceName').textContent = p ? p.emoji + ' ' + p.name : '';
+    document.getElementById('noteText').value = notes[noteTargetId] || '';
+    document.getElementById('noteModal').classList.add('show');
+  };
+
+  function renderList() {
+    const list = document.getElementById('list');
+    const filtered = getFiltered();
+    document.getElementById('listCount').textContent = filtered.length + (lang === 'zh' ? ' 間' : '');
+    if (!filtered.length) {
+      list.innerHTML = '<div class="empty"><div class="empty-icon">🍽️</div>' + t('noResult') + '</div>';
+      return;
+    }
+    let html = '';
+    if (activeFilter === 'all' && !searchQuery && !onlyOpen && !priceFilters.size && recentIds.length) {
+      const rec = recentIds.map(id => places.find(p => String(p.id) === String(id))).filter(Boolean);
+      if (rec.length) {
+        html += '<div class="section-label">' + t('recent') + '</div>' + rec.map(cardHtml).join('');
+        html += '<div class="section-label">' + t('results') + '</div>';
+      }
+    }
+    list.innerHTML = html + filtered.map(cardHtml).join('');
+  }
+
+  function cardHtml(p) {
+    const isFav = favorites.has(String(p.id));
+    const note = notes[String(p.id)];
+    return '<div class="card' + (isFav ? ' fav-card' : '') + '" data-id="' + p.id + '" onclick="focusPlace(\'' + p.id + '\')">' +
+      '<button class="fav-btn' + (isFav ? ' is-fav' : '') + '" onclick="event.stopPropagation();toggleFav(\'' + p.id + '\')">' + (isFav ? '❤️' : '🤍') + '</button>' +
+      '<div class="card-emoji">' + p.emoji + '</div><div class="card-body">' +
+      '<div class="card-title">' + p.name + '</div>' +
+      '<div class="card-meta">' +
+      '<span class="distance">📍 ' + p.distKm + ' km</span><span class="walk">🚶 ' + p.walkMin + ' ' + t('walk') + '</span>' +
+      '</div>' +
+      '<div class="tags"><span class="tag">' + p.type + '</span>' +
+      (p.tags || []).map(x => '<span class="tag">' + x + '</span>').join('') +
+      (note ? '<span class="tag note-tag">📝</span>' : '') +
+      '</div></div></div>';
+  }
+
+  function highlightCard(id) {
+    document.querySelectorAll('.card').forEach(c => c.classList.remove('active'));
+    const card = document.querySelector('.card[data-id="' + id + '"]');
+    if (card) { card.classList.add('active'); card.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); }
+  }
+
+  window.focusPlace = function(id) {
+    const p = places.find(x => String(x.id) === String(id));
+    if (!p) return;
+    addRecent(String(p.id));
+    map.setView([p.lat, p.lng], 17, { animate: true });
+    markersCluster.eachLayer(layer => {
+      if (layer.getLatLng && Math.abs(layer.getLatLng().lat - p.lat) < 0.0001) {
+        markersCluster.zoomToShowLayer(layer, () => layer.openPopup());
+      }
+    });
+    highlightCard(id);
+    renderList();
+  };
+  window.toggleFav = toggleFav;
+
+  function showLucky() {
+    const list = getFiltered();
+    if (!list.length) { alert(t('noResult').replace(/<[^>]+>/g, ' ')); return; }
+    let pick = list[Math.floor(Math.random() * list.length)];
+    if (list.length > 1 && pick.id === lastLuckyId) pick = list[(list.indexOf(pick) + 1) % list.length];
+    lastLuckyId = pick.id;
+    document.getElementById('luckyEmoji').textContent = pick.emoji;
+    document.getElementById('luckyName').textContent = pick.name;
+    document.getElementById('luckyMeta').innerHTML = metaLine(pick) + '<br/>' + pick.type;
+    document.getElementById('luckyModal').classList.add('show');
+    document.getElementById('luckyGo').onclick = () => {
+      document.getElementById('luckyModal').classList.remove('show');
+      focusPlace(pick.id);
+      if (panelCollapsed) togglePanel();
+    };
+  }
+
+  function clearFilters() {
+    activeFilter = 'all'; searchQuery = ''; onlyOpen = false; priceFilters.clear(); sortBy = 'dist';
+    document.getElementById('searchInput').value = '';
+    document.getElementById('sortSelect').value = 'dist';
+    document.querySelectorAll('#filters .chip').forEach(c => c.classList.toggle('active', c.dataset.filter === 'all'));
+    document.getElementById('chipOpen').classList.remove('toggle-on');
+    document.querySelectorAll('[data-price]').forEach(c => c.classList.remove('active'));
+    renderMarkers(); renderList();
+  }
+
+  function exportFavs() {
+    const favPlaces = places.filter(p => favorites.has(String(p.id)));
+    const lines = favPlaces.map(p => p.emoji + ' ' + p.name + ' | ' + p.distKm + 'km' + (notes[String(p.id)] ? ' | 📝 ' + notes[String(p.id)] : '') + ' | ' + navUrl(p));
+    const blob = new Blob([lines.join('\n') || '(empty)'], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'hungry-map-favs.txt';
+    a.click();
+    alert(t('exported'));
+  }
+
+  function togglePanel() {
+    panelCollapsed = !panelCollapsed;
+    document.getElementById('panel').classList.toggle('collapsed', panelCollapsed);
+    document.getElementById('toggleText').textContent = panelCollapsed ? t('showList') : t('hideList');
+  }
+
+  // Events
+  document.getElementById('filters').addEventListener('click', e => {
+    const chip = e.target.closest('.chip');
+    if (!chip || !chip.dataset.filter) return;
+    document.querySelectorAll('#filters .chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = chip.dataset.filter;
+    renderMarkers(); renderList();
+  });
+  document.getElementById('chipOpen').addEventListener('click', () => {
+    onlyOpen = !onlyOpen;
+    document.getElementById('chipOpen').classList.toggle('toggle-on', onlyOpen);
+    renderMarkers(); renderList();
+  });
+  document.querySelectorAll('[data-price]').forEach(chip => {
+    chip.addEventListener('click', () => {
+      const price = chip.dataset.price;
+      if (priceFilters.has(price)) { priceFilters.delete(price); chip.classList.remove('active'); }
+      else { priceFilters.add(price); chip.classList.add('active'); }
+      renderMarkers(); renderList();
+    });
+  });
+  document.getElementById('sortSelect').addEventListener('change', e => { sortBy = e.target.value; renderList(); });
+  document.getElementById('searchInput').addEventListener('input', e => { searchQuery = e.target.value; renderMarkers(); renderList(); });
+  document.getElementById('btnClear').addEventListener('click', clearFilters);
+  document.getElementById('radiusInput').addEventListener('change', e => {
+    radiusM = Math.min(5000, Math.max(200, +e.target.value || 1200));
+    e.target.value = radiusM;
+    updateRangeCircle();
+    finishLocate(userLat, userLng, false);
+  });
+  document.getElementById('btnCircle').addEventListener('click', () => {
+    showRange = !showRange;
+    document.getElementById('btnCircle').classList.toggle('active', showRange);
+    updateRangeCircle();
+  });
+  document.getElementById('btnSat').addEventListener('click', () => {
+    useSat = !useSat;
+    document.getElementById('btnSat').classList.toggle('active', useSat);
+    if (useSat) { map.removeLayer(streetLayer); satLayer.addTo(map); }
+    else { map.removeLayer(satLayer); streetLayer.addTo(map); }
+  });
+  document.getElementById('btnTogglePanel').addEventListener('click', togglePanel);
+  document.getElementById('btnMobileToggle').addEventListener('click', togglePanel);
+  document.getElementById('btnLocate').addEventListener('click', locateUser);
+  document.getElementById('btnLucky').addEventListener('click', showLucky);
+  document.getElementById('btnTheme').addEventListener('click', toggleTheme);
+  document.getElementById('btnLang').addEventListener('click', () => {
+    lang = lang === 'zh' ? 'en' : 'zh';
+    localStorage.setItem('hm-lang', lang);
+    applyI18n(); renderList();
+  });
+  document.getElementById('luckyAgain').addEventListener('click', showLucky);
+  document.getElementById('luckyModal').addEventListener('click', e => { if (e.target.id === 'luckyModal') e.target.classList.remove('show'); });
+  document.getElementById('noteSave').addEventListener('click', () => {
+    if (noteTargetId) {
+      const v = document.getElementById('noteText').value.trim();
+      if (v) notes[noteTargetId] = v; else delete notes[noteTargetId];
+      saveNotes(); renderList();
+    }
+    document.getElementById('noteModal').classList.remove('show');
+  });
+  document.getElementById('noteCancel').addEventListener('click', () => document.getElementById('noteModal').classList.remove('show'));
+  document.getElementById('btnMore').addEventListener('click', () => document.getElementById('moreModal').classList.add('show'));
+  document.getElementById('moreClose').addEventListener('click', () => document.getElementById('moreModal').classList.remove('show'));
+  document.getElementById('btnExport').addEventListener('click', exportFavs);
+  document.getElementById('btnAbout').addEventListener('click', () => {
+    document.getElementById('moreModal').classList.remove('show');
+    document.getElementById('aboutModal').classList.add('show');
+  });
+  document.getElementById('aboutClose').addEventListener('click', () => document.getElementById('aboutModal').classList.remove('show'));
+  document.getElementById('onboardClose').addEventListener('click', () => {
+    document.getElementById('onboardModal').classList.remove('show');
+    localStorage.setItem('hm-onboarded', '1');
+  });
+
+  // Keyboard
+  document.addEventListener('keydown', e => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
+      if (e.key === 'Escape') e.target.blur();
+      return;
+    }
+    if (e.key === 'r' || e.key === 'R') showLucky();
+    if (e.key === 'l' || e.key === 'L') locateUser();
+    if (e.key === 'd' || e.key === 'D') toggleTheme();
+    if (e.key === '/') { e.preventDefault(); document.getElementById('searchInput').focus(); }
+  });
+
+  // PWA install
+  window.addEventListener('beforeinstallprompt', e => {
+    e.preventDefault();
+    deferredPrompt = e;
+    document.getElementById('btnInstall').style.display = 'block';
+  });
+  document.getElementById('btnInstall').addEventListener('click', async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    await deferredPrompt.userChoice;
+    deferredPrompt = null;
+    document.getElementById('btnInstall').style.display = 'none';
+  });
+
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+
+  // Start
+  applyI18n();
+  initTheme();
+  initMap();
+  locateUser();
+  updateFavCount();
+  if (!localStorage.getItem('hm-onboarded')) {
+    setTimeout(() => document.getElementById('onboardModal').classList.add('show'), 600);
+  }
+  </script>
+</body>
+</html>
