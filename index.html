@@ -293,6 +293,7 @@
           <input type="number" id="radiusInput" min="200" max="5000" step="100" value="1200" title="米" />
           <span class="list-count" id="listCount"></span>
         </div>
+        <div class="data-updated" id="dataUpdated" style="font-size:.72rem;color:var(--muted);"></div>
       </div>
       <div class="list" id="list"></div>
     </aside>
@@ -514,6 +515,16 @@
     const el = document.getElementById('favCount');
     if (el) el.textContent = favorites.size ? '(' + favorites.size + ')' : '';
   }
+  function updateDataLabel() {
+    const el = document.getElementById('dataUpdated');
+    if (!el) return;
+    if (fehdMeta && fehdMeta.date) {
+      el.textContent = (lang === 'zh' ? '資料更新：' : 'Data updated: ') + fehdMeta.date
+        + (fehdMeta.n ? ' · ' + fehdMeta.n.toLocaleString() + (lang === 'zh' ? ' 間' : '') : '');
+    } else {
+      el.textContent = '';
+    }
+  }
 
   function toggleFav(id) {
     id = String(id);
@@ -594,8 +605,10 @@
       places = await fetchNearbyPlaces(lat, lng, radiusM);
       dataSource = 'fehd';
       const total = fehdMeta ? fehdMeta.n : '';
-      status.innerHTML = '✅ 食環署 · 附近 ' + places.length + (lang === 'zh' ? ' 間' : '') + (total ? ' / 全港 ' + total : '');
-      setTimeout(() => status.classList.add('hidden'), 2500);
+      const upd = fehdMeta && fehdMeta.date ? fehdMeta.date : '';
+      status.innerHTML = '✅ 食環署 · 附近 ' + places.length + (lang === 'zh' ? ' 間' : '') + (total ? ' / 全港 ' + total : '') + (upd ? ' · ' + upd : '');
+      updateDataLabel();
+      setTimeout(() => status.classList.add('hidden'), 2800);
     } catch (e) {
       places = [];
       dataSource = 'none';
@@ -835,7 +848,7 @@
   document.getElementById('btnLang').addEventListener('click', () => {
     lang = lang === 'zh' ? 'en' : 'zh';
     localStorage.setItem('hm-lang', lang);
-    applyI18n(); renderList();
+    applyI18n(); renderList(); updateDataLabel();
   });
   document.getElementById('luckyAgain').addEventListener('click', showLucky);
   document.getElementById('luckyModal').addEventListener('click', e => { if (e.target.id === 'luckyModal') e.target.classList.remove('show'); });
@@ -853,6 +866,11 @@
   document.getElementById('btnExport').addEventListener('click', exportFavs);
   document.getElementById('btnAbout').addEventListener('click', () => {
     document.getElementById('moreModal').classList.remove('show');
+    const aboutP = document.querySelector('#aboutModal [data-i18n="aboutText"]');
+    if (aboutP && fehdMeta) {
+      const base = t('aboutText');
+      aboutP.innerHTML = base + (fehdMeta.date ? '<br/>' + (lang === 'zh' ? '資料更新日期：' : 'Data date: ') + fehdMeta.date : '');
+    }
     document.getElementById('aboutModal').classList.add('show');
   });
   document.getElementById('aboutClose').addEventListener('click', () => document.getElementById('aboutModal').classList.remove('show'));
